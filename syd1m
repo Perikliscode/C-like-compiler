@@ -1,0 +1,329 @@
+%{
+ 
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <ctype.h>
+
+#define DEBUG 0
+#include "astdef.h"
+/* ----------------------------------------------------------- */
+/* --------- Declarations for Syntax-Semantic Analysis ------- */
+/* ----------------------------------------------------------- */
+
+int yylex(void);
+
+
+AstNode *TreeRoot;
+symbol *p,*p1,*p2,*p3;
+symbol *SYMTB[SYM_TABLE_SIZE];
+int TopOfStack=-1;
+
+AstNode *Meths[METH_TABLE_SIZE];
+int TopOfMeths=-1;
+
+int WhileStack[WHILE_TABLE_SIZE];
+int topWhile = -1;
+%}
+
+%union
+{
+    int   yint;
+    char  ystr[81];
+	char op;
+    struct AstNode_tag *stnode;
+}
+
+%token <yint> AND INT ELSE IF NOT OR TRUE FALSE WHILE BREAK RETURN
+%token <ystr> NUM
+%token <ystr> '(' ')' '{' '}'
+%token <ystr> '*' '/' '+' '-' ';' ','
+%token <ystr> GE '>' LE '<' NE EQ '='
+%token <ystr> ID
+
+ 
+%type <stnode> PROGRAM METH_LIST METH PARAMS TYPE BODY DECLS DECL_LIST DECL VARS STMTS STMT BLOCK ASSIGN LOCATION METHOD
+%type <stnode> ADDOP MULOP
+%type <stnode> EXPR RELOP ADD_EXPR TERM FACTOR ACTUALS ARGS FORMALS
+
+
+%start PROGRAM
+
+%%
+
+PROGRAM           : METH_LIST
+	{ 	
+		TreeRoot=MkNode(astProgram,NULL,$1,NULL,NULL,NULL); 
+		
+	}
+		| /* EMPTY */
+	{
+		TreeRoot=MkNode(astEmptyProgram,NULL,NULL,NULL,NULL,NULL);
+	};
+METH_LIST	: METH METH_LIST
+	{
+		$$ = MkNode(astMethList,NULL,$1,$2,NULL,NULL);
+	}
+		| METH
+	{
+	  $$=MkNode(astMethListLast,NULL,$1,NULL,NULL,NULL);
+	};
+METH		: TYPE ID '(' PARAMS ')' BODY
+	{
+		p1=new_symbol($2);
+		p1->Method=1;
+		p1->lvalue=0;
+		$$=MkNode(astMeth,p1,$1,$4,$6,NULL);
+	};
+PARAMS		: FORMALS TYPE ID
+	{
+		p1=new_symbol($3);
+		$$=MkNode(astParams,p1,$1,NULL,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+	  $$=MkNode(astEmptyParams,NULL,NULL,NULL,NULL,NULL);
+	};
+FORMALS		: FORMALS TYPE ID ','
+	{
+		p1=new_symbol($3);
+		$$=MkNode(astParams,p1,$1,NULL,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+	  $$=MkNode(astEmptyParams,NULL,NULL,NULL,NULL,NULL);
+	};
+TYPE		: INT
+	{
+	  $$=MkNode(astTypeInt,NULL,NULL,NULL,NULL,NULL);
+	};
+BODY		: '{' DECLS STMTS '}'
+	{
+	  $$=MkNode(astBody,NULL,$2,$3,NULL,NULL);
+	};
+DECLS		: DECL_LIST DECL
+	{
+		$$=MkNode(astDecls,NULL,$1,$2,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+		
+		$$=MkNode(astEmpty,NULL,NULL,NULL,NULL,NULL);
+	};
+DECL_LIST	:  DECL_LIST DECL
+	{
+	  $$=MkNode(astDecls,NULL,$1,$2,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+	  $$=MkNode(astEmptyDecls,NULL,NULL,NULL,NULL,NULL);
+	};
+DECL		:  TYPE ID VARS ';'
+	{
+		p1=new_symbol($2);
+		$$=MkNode(astDec,p1,$3,NULL,NULL,NULL);
+	}
+		| TYPE ID '=' EXPR VARS ';'
+	{
+		p1=new_symbol($2);
+		$$=MkNode(astDecVal,p1,$4,$5,NULL,NULL);
+	};
+VARS		:  ',' ID VARS
+	{
+		p1=new_symbol($2);
+		$$=MkNode(astDec,p1,$3,NULL,NULL,NULL);
+	}
+		| ',' ID '=' EXPR VARS
+	{
+		p1=new_symbol($2);
+		$$=MkNode(astDecVal,p1,$4,$5,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+	  $$=MkNode(astEmpty,NULL,NULL,NULL,NULL,NULL);
+	};
+STMTS		: STMTS STMT
+	{
+	  $$=MkNode(astStmts,NULL,$1,$2,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+	  $$=MkNode(astEmpty,NULL,NULL,NULL,NULL,NULL);
+	};
+STMT		: ASSIGN ';'
+	{
+		$$=$1;
+	}
+		| RETURN EXPR ';'
+	{
+		$$=MkNode(astStmtReturn,NULL,$2,NULL,NULL,NULL);
+	}
+		|  IF '(' EXPR ')' STMT ELSE STMT
+	{
+		$$=MkNode(astStmtIf,NULL,$3,$5,$7,NULL);
+	}
+		| WHILE '(' EXPR ')' STMT
+	{
+		$$=MkNode(astStmtWhile,NULL,$3,$5,NULL,NULL);
+	}
+		| BREAK ';'
+	{
+		$$=MkNode(astStmtBreak,NULL,NULL,NULL,NULL,NULL);
+	}
+		| BLOCK
+	{
+		$$=$1;
+	}
+		| ';'
+	{
+		$$=MkNode(astEmpty,NULL,NULL,NULL,NULL,NULL);
+	};
+BLOCK		: '{' STMTS '}'
+	{
+		$$=$2;
+	};
+ASSIGN		: LOCATION '=' EXPR
+	{
+		$$=MkNode(astAssign,NULL,$1,$3,NULL,NULL);
+	};
+LOCATION		: ID
+	{
+		p1=new_symbol($1);
+		$$=MkNode(astLoc,p1,NULL,NULL,NULL,NULL);
+	};
+METHOD		: ID
+	{
+		p1=new_symbol($1);
+		$$=MkNode(astMethod,p1,NULL,NULL,NULL,NULL);
+	};
+EXPR		: ADD_EXPR RELOP ADD_EXPR
+	{
+		p = new_symbol("");
+		p->lvalue=0;
+		$$=MkNode(astExpr,p,$1,$2,$3,NULL);
+	}
+		| ADD_EXPR
+	{
+	  $$=$1;
+	};
+RELOP		: LE
+	{
+		$$=MkNode(astLeEq,NULL,NULL,NULL,NULL,NULL);
+	}
+		| NE
+	{
+		$$=MkNode(astNotEq,NULL,NULL,NULL,NULL,NULL);
+	}
+		| '<'
+	{
+		$$=MkNode(astLess,NULL,NULL,NULL,NULL,NULL);
+	}
+		| '>'
+	{
+		$$=MkNode(astGreater,NULL,NULL,NULL,NULL,NULL);
+	}
+		| GE
+	{
+		$$=MkNode(astGrEq,NULL,NULL,NULL,NULL,NULL);
+	}
+		| EQ
+	{
+		$$=MkNode(astEq,NULL,NULL,NULL,NULL,NULL);
+	}
+
+ADD_EXPR	: ADD_EXPR ADDOP TERM
+	{
+		p = new_symbol("");
+		p->lvalue=0;
+		$$=MkNode(astAddExpr,p,$1,$2,$3,NULL);
+	}
+		| TERM
+	{
+		$$=$1;
+	};
+ADDOP		: '+'
+	{
+		$$=MkNode(astAdd,NULL,NULL,NULL,NULL,NULL);
+	}
+		| '-'
+	{
+		$$=MkNode(astSub,NULL,NULL,NULL,NULL,NULL);
+	};
+TERM		: TERM MULOP FACTOR
+	{
+		p = new_symbol("");
+		p->lvalue=0;
+		$$=MkNode(astTerm,p,$1,$2,$3,NULL);
+	}
+		| FACTOR
+	{
+		$$=$1;
+	};
+MULOP		: '*'
+	{
+		$$=MkNode(astMult,NULL,NULL,NULL,NULL,NULL);
+	}
+		| '/'
+	{
+		$$=MkNode(astDiv,NULL,NULL,NULL,NULL,NULL);
+	};
+FACTOR		: '(' EXPR ')'
+	{
+	  $$=$2;
+	}
+		| LOCATION
+	{
+	  $$=$1;
+	}
+		| NUM
+	{
+		p=new_symbol($1);
+		p->typos=INT;
+		p->disposable=FALSE;
+		p->lvalue=FALSE;
+		p->timi=atoi($1);
+		$$=MkNode(astNum,p,NULL,NULL,NULL,NULL);
+	}
+		| TRUE
+	{
+		p1 = new_symbol("");
+		p1->timi = 1;
+		$$=MkNode(astTrue,p1,NULL,NULL,NULL,NULL);
+	}
+		| FALSE
+	{
+		p1 = new_symbol("");
+		p1->timi = 0;
+		$$=MkNode(astFalse,p1,NULL,NULL,NULL,NULL);
+	}
+		| METHOD '(' ACTUALS ')'
+	{
+		
+		$$=MkNode(astMethCall,NULL,$1,$3,NULL,NULL);
+	};
+ACTUALS		: ARGS EXPR
+	{
+		$$=MkNode(astActuals,NULL,$1,$2,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+		$$=MkNode(astEmpty,NULL,NULL,NULL,NULL,NULL);
+	};
+ARGS		: ARGS EXPR ','
+	{
+	  $$=MkNode(astActuals,NULL,$1,$2,NULL,NULL);
+	}
+		| /* EMPTY */
+	{
+	  $$=MkNode(astEmpty,NULL,NULL,NULL,NULL,NULL);
+	};
+%%
+
+void yyerror(char *s)
+{
+   fputs(s,stderr); putc('\n',stderr);
+}
+
+
+
+#include "syd1_2m"

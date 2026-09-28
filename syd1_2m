@@ -1,0 +1,178 @@
+AstNode *MkNode(int tipos,symbol *sn,
+              AstNode *z0,AstNode *z1,AstNode *z2,AstNode *z3)
+{  AstNode *p;
+
+   p=(AstNode *)malloc(sizeof(AstNode));
+   if(!p)
+   {
+      printf("Out of memory\n");
+      exit(1);
+   }
+   else
+   {
+      p->NodeType=tipos;
+      p->SymbolNode=sn;
+      p->pAstNode[0]=z0;
+      p->pAstNode[1]=z1;
+      p->pAstNode[2]=z2;
+      p->pAstNode[3]=z3;
+      return(p);
+   }
+}
+
+symbol *new_symbol(char *name)
+{
+
+   symbol *symbp = malloc(sizeof(symbol));
+   strncpy(symbp->name,name,(strlen(name)>NAME_MAX)?NAME_MAX:strlen(name));
+   symbp->name[strlen(name)]='\0';
+   symbp->timi=0;
+   symbp->disposable=FALSE;
+   symbp->lvalue=TRUE;
+   symbp->Method=0;
+   symbp->scopeMarker=0;
+   return(symbp);
+}
+symbol *find_sym(char *sname) {
+	int stop = 0;
+	int NameisMethod = 0;
+	for(int i=0;i<METH_TABLE_SIZE && stop==0;i++){
+		if(Meths[i]){
+			if(strcmp(Meths[i]->SymbolNode->name,sname)==0){
+				NameisMethod=1;
+				stop=1;
+			}
+		}
+		else{
+			stop=1;
+		}
+	}
+	
+	
+    int i = TopOfStack;
+	int ScopeEnd=0;
+    while (i >= 0 && ScopeEnd==0) {
+		if(SYMTB[i]){
+			if(SYMTB[i]->scopeMarker==1 && NameisMethod==0){
+				ScopeEnd=1;
+			}
+			if (strcmp(SYMTB[i]->name, sname) == 0){
+				return SYMTB[i];
+			}
+		}
+        
+        i--;
+    }
+    return NULL;
+}
+
+void pushS(symbol *s){
+	if(TopOfStack+1>=SYM_TABLE_SIZE){
+		printf("table full\n");
+		exit(1);
+	}
+	else{
+		symbol *st;
+		st = find_sym(s->name);
+		if(st==NULL){
+			SYMTB[++TopOfStack]=s;
+		}
+		else if(strcmp(s->name, "") == 0){
+			SYMTB[++TopOfStack]=s;
+			return;
+		}
+		else{
+			printf("Err:Name already decleared");
+			exit(1);
+		}
+	}
+	printf("--pushed %s\n",SYMTB[TopOfStack]->name);
+	return;
+}
+symbol *popS(){
+	if(TopOfStack==-1){
+		printf("table empty\n");
+		return NULL;
+	}
+	else{
+		return SYMTB[TopOfStack--];
+	}
+}
+void pop_until_block(){
+	int foundM = 0;
+	while(TopOfStack>=0 && foundM==0){
+		printf("top:%d",TopOfStack);
+		printf(" symb:%s=%d\n",SYMTB[TopOfStack]->name,SYMTB[TopOfStack]->timi);
+		if(SYMTB[TopOfStack]->scopeMarker==1){
+			TopOfStack--;
+			foundM=1;
+		}
+		else{
+			TopOfStack--;
+		}
+		
+	}
+	return;
+}
+symbol *checkCall(char *sname){
+	symbol *s = find_sym(sname);
+	if(s==NULL){
+		printf("Err:Called name does not exist in current context");
+		exit(1);
+	}
+	
+	return s;
+}
+
+void pushM(AstNode *M){
+	if(TopOfMeths+1>=METH_TABLE_SIZE){
+		printf("table full\n");
+		exit(1);
+	}
+	else{
+		Meths[++TopOfMeths]=M;
+	}
+	return;
+	
+}
+
+AstNode *find_Meth(char *mn){
+	for(int i=0;i<=TopOfMeths;i++){
+		if(strcmp(mn,Meths[i]->SymbolNode->name)==0){
+			return Meths[i];
+		}
+	}
+	return NULL;
+}
+
+void pushW(){
+	if(topWhile+1>=WHILE_TABLE_SIZE){
+		printf("table full\n");
+		exit(1);
+	}
+	
+	WhileStack[++topWhile] = 0;
+	return;
+}
+
+int isBreak()   { return WhileStack[topWhile]; }
+
+void popW(){
+	if(topWhile==-1){
+		printf("table empty\n");
+		return;
+	}
+	else{
+		topWhile--;
+		return;
+	}
+}
+
+void checkBreak(){
+	if(topWhile<0){
+		printf("Err:Break statement not within loop");
+		exit(1);
+	}
+}
+
+void setBreak() { WhileStack[topWhile] = 1; }
